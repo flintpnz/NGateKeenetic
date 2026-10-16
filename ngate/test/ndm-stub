@@ -1,0 +1,20 @@
+#!/bin/sh
+# Заглушка прошивки для теста в Docker: пишет команду в журнал и делает с
+# устройством то же, что сделала бы прошивка.
+LOG=/var/log/ndm-stub.log
+DEV=opkgtun0
+echo "$(date '+%T') $1" >> $LOG
+set -- $1
+case "$1 $3 $4" in
+  "interface ip address")
+    /usr/sbin/ip addr flush dev $DEV
+    bits=0
+    for o in $(echo "$6" | tr . ' '); do
+      while [ "$o" -gt 0 ]; do bits=$((bits + (o & 1))); o=$((o >> 1)); done
+    done
+    /usr/sbin/ip addr add "$5/$bits" dev $DEV
+    ;;
+  "interface ip mtu")
+    /usr/sbin/ip link set dev $DEV mtu "$5"
+    ;;
+esac

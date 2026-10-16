@@ -1,0 +1,26 @@
+# /opt/debian/etc/ngate-keeper.conf (внутри chroot: /etc/ngate-keeper.conf), chmod 600.
+
+# Секрет TOTP (base32) из QR-кода Мультифактора: otpauth://totp/...?secret=XXXX
+NG_TOTP_SECRET=JBSWY3DPEHPK3PXP
+# Если в QR указаны другие algorithm/digits — поправить
+NG_TOTP_ALGO=sha1
+NG_TOTP_DIGITS=6
+
+# Узел за туннелем для проверки. Внутренний DNS отвечает по TCP 53 — ping не нужен.
+NG_CHECK_HOST=10.0.0.53
+NG_CHECK_PORT=53
+
+# Интервал проверки (с) и сколько неудачных проверок подряд считать разрывом
+CHECK_INTERVAL=30
+FAIL_LIMIT=3
+# Сколько секунд после старта сеанса не проверять туннель
+CONNECT_GRACE=90
+# Пауза перед повторным подключением: растёт вдвое от MIN до MAX
+MIN_DELAY=15
+MAX_DELAY=900
+
+# Интерфейс прошивки и его устройство
+NDM_IF=OpkgTun0
+NG_TUN_DEV=opkgtun0
+# IP-заглушка на интерфейсе, пока туннель не поднят
+IDLE_IP="192.0.2.1 255.255.255.255"

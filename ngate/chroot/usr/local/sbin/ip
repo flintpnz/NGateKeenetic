@@ -1,0 +1,119 @@
+#!/bin/sh
+# Обёртка ip для ngatetun в схеме с интерфейсом прошивки OpkgTun0 (аналог up.sh/down.sh
+# из whvpn). Ставится как /usr/local/sbin/ip в chroot: ngatetun ищет ip сначала по PATH.
+#
+#   ip link set dev tun0 mtu M up        -> ndm: interface OpkgTun0 ip mtu M (+ настоящий ip)
+#   ip addr add dev tun0 local A/P       -> ndm: interface OpkgTun0 ip address A MASK
+#   ip addr del dev tun0 local A/P       -> ndm: заглушка IDLE_IP
+#   ip link set dev tun0 down            -> пропускаем: устройством управляет прошивка
+#   всё остальное (route add/del ...)    -> настоящий ip, имя tun0 заменено на opkgtun0
+#
+# Имя, которое просил ngatetun, и реальное имя берутся из файла, который пишет tunshim.
+
+CONF=${NGATE_CONF:-/etc/ngate-keeper.conf}
+[ -f "$CONF" ] && . "$CONF"
+NDM_IF=${NDM_IF:-OpkgTun0}
+IDLE_IP=${IDLE_IP:-"192.0.2.1 255.255.255.255"}
+MAP=${NGATE_TUN_MAP:-/run/ngate-tun.map}
+LOG=${NGATE_IP_LOG:-/var/log/ngate-ip.log}
+RCI=${NDM_RCI:-http://127.0.0.1:79/rci/}
+
+self=$(readlink -f "$0")
+REAL=
+for c in /usr/sbin/ip /usr/bin/ip /sbin/ip /bin/ip; do
+  if [ -x "$c" ] && [ "$(readlink -f "$c")" != "$self" ]; then REAL=$c; break; fi
+done
+
+log() { echo "$(date '+%F %T') $*" >> "$LOG" 2>/dev/null; }
+
+# Команда CLI прошивки. В chroot ndmc нет — идём через RCI (сеть у chroot общая).
+# NDM_CMD подменяет вызов (для тестов).
+ndm() {
+  log "ndm: $*"
+  if [ -n "${NDM_CMD:-}" ]; then
+    "$NDM_CMD" "$*"
+    return
+  fi
+  out=$(curl -s --max-time 10 -H 'Content-Type: application/json' \
+          -d "{\"parse\":\"$*\"}" "$RCI") || { log "ndm: RCI unreachable"; return 1; }
+  log "ndm: <- $(echo "$out" | tr -d '\n' | cut -c1-300)"
+  echo "$out" | grep -q '"status": *"error"' && return 1
+  return 0
+}
+
+prefix2mask() {
+  n=$1 m=
+  for _ in 1 2 3 4; do
+    if [ "$n" -ge 8 ]; then o=255; n=$((n - 8))
+    elif [ "$n" -gt 0 ]; then o=$((256 - (1 << (8 - n)))); n=0
+    else o=0; fi
+    m="$m${m:+.}$o"
+  done
+  echo "$m"
+}
+
+# ждём, пока прошивка поставит адрес на устройство (маршруты "via" без него не встанут)
+wait_addr() {
+  i=0
+  while [ $i -lt 50 ]; do
+    "$REAL" -4 addr show dev "$1" 2>/dev/null | grep -q "inet $2/" && return 0
+    sleep 0.1
+    i=$((i + 1))
+  done
+  log "address $2 did not appear on $1"
+  return 1
+}
+
+# имена: что просил ngatetun -> что реально открыто
+asked= real=
+[ -r "$MAP" ] && read -r asked real < "$MAP"
+
+# аргументы с заменой имени устройства; заодно запоминаем адрес и MTU
+args= addr= mtu= dev=
+prev=
+for a in "$@"; do
+  [ -n "$asked" ] && [ "$a" = "$asked" ] && a=$real
+  case "$prev" in
+    dev) dev=$a ;;
+    local) addr=$a ;;
+    mtu) mtu=$a ;;
+  esac
+  args="$args '$(printf '%s' "$a" | sed "s/'/'\\\\''/g")'"
+  prev=$a
+done
+eval "set -- $args"
+
+ours() { [ -n "$real" ] && [ "$dev" = "$real" ]; }
+
+log "call: $*"
+
+case "$1 $2" in
+  "link set")
+    if ours; then
+      case " $* " in
+        *" down "*)
+          log "skip: link down is managed by firmware"
+          exit 0 ;;
+      esac
+      [ -n "$mtu" ] && ndm "interface $NDM_IF ip mtu $mtu"
+    fi
+    ;;
+  "addr add"|"address add")
+    if ours; then
+      [ -z "$addr" ] && for a in "$@"; do case "$a" in */*) addr=$a ;; esac; done
+      ip4=${addr%/*}
+      mask=$(prefix2mask "${addr#*/}")
+      ndm "interface $NDM_IF ip address $ip4 $mask" || exit 2
+      wait_addr "$real" "$ip4" || exit 2
+      exit 0
+    fi
+    ;;
+  "addr del"|"address del")
+    if ours; then
+      ndm "interface $NDM_IF ip address $IDLE_IP"
+      exit 0
+    fi
+    ;;
+esac
+
+exec "$REAL" "$@"

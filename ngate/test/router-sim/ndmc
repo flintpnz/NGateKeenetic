@@ -1,0 +1,30 @@
+#!/bin/sh
+# Имитация ndmc прошивки: ведёт "running-config" для OpkgTun и управляет устройством так,
+# как это делает прошивка (создаёт opkgtun0, ставит адрес и MTU).
+CFG=/var/lib/ndm-sim.cfg
+LOG=/var/log/ndm-sim.log
+[ "$1" = "-c" ] && shift
+cmd=$1
+echo "$(date '+%T') $cmd" >> $LOG
+touch $CFG
+set -- $cmd
+case "$cmd" in
+  "show running-config")
+    cat $CFG ;;
+  "interface "*" ip address "*)
+    /usr/sbin/ip addr flush dev opkgtun0
+    bits=0
+    for o in $(echo "$6" | tr . ' '); do
+      while [ "$o" -gt 0 ]; do bits=$((bits + (o & 1))); o=$((o >> 1)); done
+    done
+    /usr/sbin/ip addr add "$5/$bits" dev opkgtun0 ;;
+  "interface "*" ip mtu "*)
+    /usr/sbin/ip link set dev opkgtun0 mtu "$5" ;;
+  "interface "*" up")
+    /usr/sbin/ip link set opkgtun0 up ;;
+  "interface "*" "*) : ;;
+  "interface "*)
+    grep -q "^interface $2\$" $CFG || echo "interface $2" >> $CFG
+    /usr/sbin/ip link show opkgtun0 >/dev/null 2>&1 || /usr/sbin/ip tuntap add dev opkgtun0 mode tun ;;
+esac
+exit 0

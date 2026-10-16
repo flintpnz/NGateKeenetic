@@ -1,0 +1,22 @@
+#!/bin/sh
+# Печатает TOTP-код для NGate (Мультифактор).
+# Не выдаёт повторно код из уже использованного 30-секундного окна
+# и не выдаёт код, которому осталось жить меньше 5 секунд.
+
+CONF=${NGATE_CONF:-/etc/ngate-keeper.conf}
+. "$CONF"
+
+STEP=30
+LAST=${NGATE_TOTP_LAST:-/run/ngate-totp.last}
+
+now=$(date +%s)
+win=$((now / STEP))
+left=$((STEP - now % STEP))
+
+if [ "$left" -lt 5 ] || [ "$win" = "$(cat "$LAST" 2>/dev/null)" ]; then
+  sleep "$left"
+  win=$((win + 1))
+fi
+echo "$win" > "$LAST"
+
+exec oathtool --totp=${NG_TOTP_ALGO:-sha1} -d "${NG_TOTP_DIGITS:-6}" -b "$NG_TOTP_SECRET"

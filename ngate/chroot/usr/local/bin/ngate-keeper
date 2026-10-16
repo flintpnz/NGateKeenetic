@@ -1,0 +1,124 @@
+#!/bin/bash
+# Держит туннель NGate поднятым: запускает сеанс (ngate-session.exp),
+# периодически проверяет доступность узла за туннелем и перезапускает
+# сеанс, если клиент завершился или узел перестал отвечать.
+
+CONF=${NGATE_CONF:-/etc/ngate-keeper.conf}
+. "$CONF"
+
+CLIENT=${NG_CLIENT:-/opt/cprongate/ngateconsoleclient}
+SESSION=${NG_SESSION:-/usr/local/bin/ngate-session.exp}
+LOG=${LOG:-/var/log/ngate-keeper.log}
+CHECK_INTERVAL=${CHECK_INTERVAL:-30}
+FAIL_LIMIT=${FAIL_LIMIT:-3}
+CONNECT_GRACE=${CONNECT_GRACE:-90}
+MIN_DELAY=${MIN_DELAY:-15}
+MAX_DELAY=${MAX_DELAY:-900}
+# сеанс, проживший дольше этого, считается удачным — пауза сбрасывается
+STABLE_AFTER=${STABLE_AFTER:-600}
+
+log() {
+  if [ -f "$LOG" ] && [ "$(stat -c %s "$LOG")" -gt 1048576 ]; then
+    mv -f "$LOG" "$LOG.1"
+  fi
+  echo "$(date '+%F %T') keeper: $*" >> "$LOG"
+}
+
+# sleep, который не мешает обработке сигналов
+nap() { sleep "$1" & wait $!; }
+
+tunnel_ok() {
+  if [ -n "${NG_CHECK_PORT:-}" ]; then
+    timeout 5 bash -c "</dev/tcp/$NG_CHECK_HOST/$NG_CHECK_PORT" 2>/dev/null
+  else
+    ping -c 2 -W 3 "$NG_CHECK_HOST" >/dev/null 2>&1
+  fi
+}
+
+# только сам клиент: его командная строка начинается с пути к бинарнику
+client_re() { echo "^$CLIENT( |\$)"; }
+
+stop_session() {
+  pkill -TERM -f "$(client_re)"
+  for _ in 1 2 3 4 5; do
+    pgrep -f "$(client_re)" >/dev/null || break
+    sleep 1
+  done
+  pkill -KILL -f "$(client_re)"
+  [ -n "${sess:-}" ] && kill "$sess" 2>/dev/null
+}
+
+# ngatetun должен работать с перехватчиком (устройство прошивки вместо своего tun0).
+# Пустой NG_SHIM — обычный режим без OpkgTun.
+SHIM=${NG_SHIM-/usr/local/lib/libngatetun-shim.so}
+TUN_DEV=${NG_TUN_DEV:-opkgtun0}
+
+ensure_tun() {
+  pid=$(pgrep -xo ngatetun)
+  if [ -n "$pid" ] && [ -n "$SHIM" ] \
+     && ! tr '\0' '\n' < "/proc/$pid/environ" 2>/dev/null | grep -qx "LD_PRELOAD=$SHIM"; then
+    log "ngatetun запущен без перехватчика (pid $pid), перезапускаю"
+    kill "$pid"
+    sleep 2
+    pid=
+  fi
+  if [ -z "$pid" ]; then
+    log "запускаю ngatetun"
+    if [ -n "$SHIM" ]; then
+      LD_PRELOAD=$SHIM NGATE_TUN_DEV=$TUN_DEV /opt/cprongate/ngatetun -D >> "$LOG" 2>&1
+    else
+      /opt/cprongate/ngatetun -D >> "$LOG" 2>&1
+    fi
+    sleep 1
+  fi
+}
+
+trap 'log "остановка по сигналу"; stop_session; exit 0' TERM INT
+
+delay=$MIN_DELAY
+while :; do
+  ensure_tun
+
+  log "запуск сеанса"
+  started=$(date +%s)
+  "$SESSION" >> "$LOG" 2>&1 &
+  sess=$!
+
+  # даём время подключиться (и дождаться ввода OTP)
+  waited=0
+  while [ "$waited" -lt "$CONNECT_GRACE" ] && kill -0 "$sess" 2>/dev/null; do
+    nap 5
+    waited=$((waited + 5))
+  done
+
+  fails=0
+  while kill -0 "$sess" 2>/dev/null; do
+    if tunnel_ok; then
+      fails=0
+    else
+      fails=$((fails + 1))
+      log "$NG_CHECK_HOST недоступен ($fails/$FAIL_LIMIT)"
+      if [ "$fails" -ge "$FAIL_LIMIT" ]; then
+        log "туннель считаю упавшим, перезапускаю клиент"
+        stop_session
+        break
+      fi
+    fi
+    nap "$CHECK_INTERVAL"
+  done
+
+  wait "$sess"
+  rc=$?
+  sess=
+  lived=$(( $(date +%s) - started ))
+  log "сеанс завершён, код $rc, прожил ${lived} с"
+
+  case "$rc" in
+    3|4|5|6) delay=$MAX_DELAY ;;  # ошибки учётных данных — не долбим шлюз
+    *) [ "$lived" -ge "$STABLE_AFTER" ] && delay=$MIN_DELAY ;;
+  esac
+
+  log "повтор через $delay с"
+  nap "$delay"
+  delay=$(( delay * 2 > MAX_DELAY ? MAX_DELAY : delay * 2 ))
+done

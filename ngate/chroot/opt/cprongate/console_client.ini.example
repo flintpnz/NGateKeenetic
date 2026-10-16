@@ -1,0 +1,8 @@
+; Скопировать в /opt/cprongate/console_client.ini внутри chroot и сделать chmod 600.
+url=https://vpn.example.com
+; логин без @domain
+username=ivanov
+password=ПАРОЛЬ
+
+verbose=5
+journalVerbose=3

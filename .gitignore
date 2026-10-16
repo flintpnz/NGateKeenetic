@@ -1,0 +1,11 @@
+.DS_Store
+
+# артефакты сборки (build-rootfs.sh)
+ngate/ngate-rootfs.tar.gz
+ngate/chroot/usr/local/lib/libngatetun-shim.so
+
+# проприетарный дистрибутив КриптоПро CSP — не распространяется
+ngate/vendor/*.tgz
+
+# результаты диагностики: внутренние адреса, маршруты, журналы
+ngate-iplog/out/

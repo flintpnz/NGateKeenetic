@@ -1,0 +1,58 @@
+#!/usr/bin/expect -f
+# Один сеанс консольного клиента NGate.
+# Логин и пароль клиент берёт из console_client.ini, на запрос OTP отвечаем
+# кодом из ngate-totp. Скрипт завершается вместе с клиентом.
+#
+# Коды выхода: код клиента; 3 — шлюз просит OTP PIN; 4 — требуется смена
+# пароля; 5 — шлюз несколько раз подряд отверг OTP.
+
+proc env_or {name default} {
+    global env
+    if {[info exists env($name)]} { return $env($name) }
+    return $default
+}
+
+set client   [env_or NG_CLIENT   /opt/cprongate/ngateconsoleclient]
+set config   [env_or NG_CONFIG   /opt/cprongate/console_client.ini]
+set journal  [env_or NG_JOURNAL  /var/log/ngate-client.log]
+set totp_cmd [env_or NG_TOTP_CMD /usr/local/bin/ngate-totp]
+set max_otp  3
+set otp_sent 0
+
+proc say {msg} { puts "\nngate-session: $msg" }
+
+set timeout -1
+cd [file dirname $client]
+spawn $client -c $config -l $journal
+
+expect {
+    -re {Please enter OTP[^\r\n:]*:} {
+        if {[string match "*PIN*" $expect_out(0,string)]} {
+            say "шлюз просит OTP PIN, такой режим не поддерживается"
+            exit 3
+        }
+        incr otp_sent
+        if {$otp_sent > $max_otp} {
+            say "OTP отвергнут $max_otp раза подряд, выхожу, чтобы не заблокировать учётку"
+            exit 5
+        }
+        if {[catch {exec $totp_cmd} code]} {
+            say "не удалось получить TOTP: $code"
+            exit 6
+        }
+        send -- "$code\r"
+        exp_continue
+    }
+    -re {connected successfully|Tunnel (is )?(opened|established)} {
+        set otp_sent 0
+        exp_continue
+    }
+    "Gateway demanded user password change" {
+        say "шлюз требует сменить пароль, смените его через GUI/веб и обновите console_client.ini"
+        exit 4
+    }
+    eof
+}
+
+lassign [wait] pid spawn_id os_error rc
+exit $rc
