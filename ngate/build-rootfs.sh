@@ -6,7 +6,7 @@
 set -euo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
 CSP_TGZ=${CSP_TGZ:-"$HERE/vendor/cprocsp-5.0.13003-linux-arm64_deb.tgz"}
-CERTS=${CERTS:-"$HOME/Downloads/nGate_Linux/_Root_cert"}
+CERTS=${CERTS:-"$HERE/certs"}
 
 ctx=$(mktemp -d)
 trap 'rm -rf "$ctx"; docker rm -f ngate-rootfs-tmp ngate-shim-tmp >/dev/null 2>&1 || true' EXIT
@@ -14,8 +14,8 @@ trap 'rm -rf "$ctx"; docker rm -f ngate-rootfs-tmp ngate-shim-tmp >/dev/null 2>&
 tar xzf "$CSP_TGZ" -C "$ctx"
 mv "$ctx"/linux-*_deb "$ctx/linux-arm64_deb" 2>/dev/null || true
 mkdir -p "$ctx/certs/root" "$ctx/certs/ca" "$ctx/src"
-cp "$CERTS/1.trusted root certification authorities/"*.cer "$ctx/certs/root/"
-cp "$CERTS/2.Intermediate Certification Authorities/"*.cer "$ctx/certs/ca/"
+cp "$CERTS/root/"*.cer "$ctx/certs/root/"
+cp "$CERTS/ca/"*.cer "$ctx/certs/ca/"
 cp "$HERE/src/tunshim.c" "$ctx/src/"
 cp "$HERE/build/Dockerfile" "$ctx/"
 

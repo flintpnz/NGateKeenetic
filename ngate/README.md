@@ -36,6 +36,19 @@
 
 Во время работы `/run`, `/tmp`, `/var/log` chroot — в RAM (tmpfs).
 
+## Свежий клон репозитория
+
+В git нет трёх файлов, без которых пакет на роутер не поставить:
+
+| Файл | Почему нет в git | Как получить |
+|---|---|---|
+| `vendor/cprocsp-5.0.13003-linux-arm64_deb.tgz` | проприетарный дистрибутив КриптоПро | скачать с cryptopro.ru, см. `vendor/README.md` |
+| `ngate-rootfs.tar.gz` | результат сборки, ~70 МБ | `./build-rootfs.sh` |
+| `chroot/usr/local/lib/libngatetun-shim.so` | результат сборки | `./build-rootfs.sh` |
+
+Поэтому после `git clone`: положить архив CSP в `vendor/` → `./build-rootfs.sh` → дальше по разделу
+«Установка». Без `.so` туннель не поднимется: ngatetun создаст свой `tun0` вместо `opkgtun0`.
+
 ## Установка
 
 0. **Место:** rootfs ≈ 260 МБ в распакованном виде — `/opt` должен быть на USB-диске (`df -h /opt`).
@@ -43,18 +56,18 @@
    Исходники сборки:
    - `vendor/cprocsp-5.0.13003-linux-arm64_deb.tgz` — КриптоПро CSP 5.0 R3 для ARM64
      (ветка `CSP_5_0r3t_ngate`; скачан из центра загрузки cryptopro.ru);
-   - `~/Downloads/nGate_Linux/_Root_cert/` — корневой и промежуточные сертификаты;
+   - `certs/root/*.cer` (CryptoPro GOST Root CA → mRoot) и `certs/ca/*.cer` (CryptoPro TLS CA → mCA);
    - NGate — из репозитория `https://ng-client.cryptopro.ru/repository/debian/arm64`.
 
    Другой архив CSP или каталог сертификатов: `CSP_TGZ=... CERTS=... ./build-rootfs.sh`.
-2. Скопировать пакет на роутер (`vendor/` и `test/` там не нужны — CSP уже внутри rootfs):
+2. Скопировать пакет на роутер (`vendor/`, `certs/`, `test/` там не нужны — всё уже внутри rootfs):
    ```sh
-   tar -C ~/Downloads/nGate_Linux/keenetic --exclude ngate/test --exclude ngate/vendor -cf - ngate \
+   tar -C ~/Downloads/nGate_Linux/keenetic --exclude ngate/test --exclude ngate/vendor --exclude ngate/certs -cf - ngate \
      | ssh -p 222 root@192.168.1.1 'mkdir -p /opt/etc && tar -C /opt/etc -xf -'
    ```
    Обновить скрипты на уже установленном роутере (rootfs повторно не передаётся):
    ```sh
-   tar -C ~/Downloads/nGate_Linux/keenetic --exclude ngate/test --exclude ngate/vendor \
+   tar -C ~/Downloads/nGate_Linux/keenetic --exclude ngate/test --exclude ngate/vendor --exclude ngate/certs \
        --exclude ngate/ngate-rootfs.tar.gz -cf - ngate \
      | ssh -p 222 root@192.168.1.1 'tar -C /opt/etc -xf -'
    ```

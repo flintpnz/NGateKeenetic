@@ -7,7 +7,7 @@
 set -euo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
 CSP_TGZ=${CSP_TGZ:-"$HERE/../ngate/vendor/cprocsp-5.0.13003-linux-arm64_deb.tgz"}
-CERTS=${CERTS:-"$HOME/Downloads/nGate_Linux/_Root_cert"}
+CERTS=${CERTS:-"$HERE/../ngate/certs"}
 OUT="$HERE/out"
 
 ctx=$(mktemp -d)
@@ -16,8 +16,8 @@ trap 'rm -rf "$ctx"' EXIT
 tar xzf "$CSP_TGZ" -C "$ctx"
 mv "$ctx"/linux-*_deb "$ctx/linux-arm64_deb" 2>/dev/null || true
 mkdir -p "$ctx/certs/root" "$ctx/certs/ca"
-cp "$CERTS/1.trusted root certification authorities/"*.cer "$ctx/certs/root/"
-cp "$CERTS/2.Intermediate Certification Authorities/"*.cer "$ctx/certs/ca/"
+cp "$CERTS/root/"*.cer "$ctx/certs/root/"
+cp "$CERTS/ca/"*.cer "$ctx/certs/ca/"
 mkdir "$ctx/ngate-iplog"
 tar -C "$HERE" --exclude ./out -cf - . | tar -C "$ctx/ngate-iplog" -xf -
 cp "$HERE/docker/Dockerfile" "$ctx/"
