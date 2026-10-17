@@ -62,12 +62,12 @@
    Другой архив CSP или каталог сертификатов: `CSP_TGZ=... CERTS=... ./build-rootfs.sh`.
 2. Скопировать пакет на роутер (`vendor/`, `certs/`, `test/` там не нужны — всё уже внутри rootfs):
    ```sh
-   tar -C ~/work/my/git/NGateKeeneticChroot --exclude ngate/test --exclude ngate/vendor --exclude ngate/certs -cf - ngate \
+   tar -C ~/work/my/git/NGateKeenetic --exclude ngate/test --exclude ngate/vendor --exclude ngate/certs -cf - ngate \
      | ssh -p 222 root@192.168.1.1 'mkdir -p /opt/etc && tar -C /opt/etc -xf -'
    ```
    Обновить скрипты на уже установленном роутере (rootfs повторно не передаётся):
    ```sh
-   tar -C ~/work/my/git/NGateKeeneticChroot --exclude ngate/test --exclude ngate/vendor --exclude ngate/certs \
+   tar -C ~/work/my/git/NGateKeenetic --exclude ngate/test --exclude ngate/vendor --exclude ngate/certs \
        --exclude ngate/ngate-rootfs.tar.gz -cf - ngate \
      | ssh -p 222 root@192.168.1.1 'tar -C /opt/etc -xf -'
    ```
