@@ -114,7 +114,7 @@ while :; do
   log "сеанс завершён, код $rc, прожил ${lived} с"
 
   case "$rc" in
-    3|4|5|6) delay=$MAX_DELAY ;;  # ошибки учётных данных — не долбим шлюз
+    3|4|5|6|7) delay=$MAX_DELAY ;;  # ошибки учётных данных — не долбим шлюз
     *) [ "$lived" -ge "$STABLE_AFTER" ] && delay=$MIN_DELAY ;;
   esac
 

@@ -2,7 +2,9 @@
 url=https://vpn.example.com
 ; логин без @domain
 username=ivanov
-password=ПАРОЛЬ
+; пароль всегда в двойных кавычках: без них запятая ломает чтение значения,
+; и клиент ждёт пароль с клавиатуры
+password="ПАРОЛЬ"
 
 verbose=5
 journalVerbose=3

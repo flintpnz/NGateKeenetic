@@ -4,7 +4,8 @@
 # кодом из ngate-totp. Скрипт завершается вместе с клиентом.
 #
 # Коды выхода: код клиента; 3 — шлюз просит OTP PIN; 4 — требуется смена
-# пароля; 5 — шлюз несколько раз подряд отверг OTP.
+# пароля; 5 — шлюз несколько раз подряд отверг OTP; 6 — не получен TOTP;
+# 7 — клиент не прочитал логин или пароль из console_client.ini.
 
 proc env_or {name default} {
     global env
@@ -26,6 +27,10 @@ cd [file dirname $client]
 spawn $client -c $config -l $journal
 
 expect {
+    -re {Please enter (username|password) for authentication:} {
+        say "клиент не прочитал $expect_out(1,string) из $config: проверьте файл, пароль должен быть в двойных кавычках"
+        exit 7
+    }
     -re {Please enter OTP[^\r\n:]*:} {
         if {[string match "*PIN*" $expect_out(0,string)]} {
             say "шлюз просит OTP PIN, такой режим не поддерживается"
